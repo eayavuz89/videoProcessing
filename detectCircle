@@ -1,0 +1,98 @@
+import cv2
+import numpy as np
+from picamera2 import Picamera2
+
+# Picamera2'yi başlat
+picam2 = Picamera2()
+
+camera_config = picam2.create_preview_configuration(main={"size": (640, 480), "format": "YUV420"})
+picam2.configure(camera_config)
+picam2.start()
+
+cv2.namedWindow("Tenis Topu Tespiti", cv2.WINDOW_AUTOSIZE)
+
+try:
+    while True:
+        frame = picam2.capture_array()
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_YUV2BGR_I420)
+        hsv = cv2.cvtColor(frame_rgb, cv2.COLOR_BGR2HSV)
+
+        # Renk maskeleri (sarı, turuncu, kırmızı ve yeşil)
+        lower_yellow = np.array([20, 70, 70])
+        upper_yellow = np.array([40, 255, 255])
+        lower_orange = np.array([5, 80, 80])
+        upper_orange = np.array([30, 255, 255])
+        lower_red1 = np.array([0, 100, 100])  # Kırmızı düşük aralık
+        upper_red1 = np.array([10, 255, 255])
+        lower_red2 = np.array([160, 100, 100])  # Kırmızı yüksek aralık
+        upper_red2 = np.array([180, 255, 255])
+        lower_green = np.array([35, 50, 50])
+        upper_green = np.array([85, 255, 255])
+
+        # Maskeleri oluştur
+        mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
+        mask_orange = cv2.inRange(hsv, lower_orange, upper_orange)
+        mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
+        mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
+        mask_green = cv2.inRange(hsv, lower_green, upper_green)
+
+        # Kırmızı için iki maskeyi birleştir
+        mask_red = cv2.bitwise_or(mask_red1, mask_red2)
+
+        # Tüm renkleri tek bir maskede birleştir
+        combined_mask = cv2.bitwise_or(mask_yellow, mask_orange)
+        combined_mask = cv2.bitwise_or(combined_mask, mask_red)
+        combined_mask = cv2.bitwise_or(combined_mask, mask_green)
+
+        # Gürültüyü azaltmak için morfolojik işlemler
+        combined_mask = cv2.erode(combined_mask, None, iterations=2)
+        combined_mask = cv2.dilate(combined_mask, None, iterations=2)
+
+        # Maskeyi orijinal görüntüye uygula
+        masked_frame = cv2.bitwise_and(frame_rgb, frame_rgb, mask=combined_mask)
+
+        # Grayscale'e dönüştür
+        gray = cv2.cvtColor(masked_frame, cv2.COLOR_BGR2GRAY)
+
+        # Gaussian Blur ile bulanıklaştırma
+        blurred = cv2.GaussianBlur(gray, (9, 9), 2)
+
+        # Hough Circle Transform ile çemberleri tespit et
+        circles = cv2.HoughCircles(
+            blurred,
+            cv2.HOUGH_GRADIENT,
+            dp=1.15,
+            minDist=30,
+            param1=70,
+            param2=35,
+            minRadius=10,
+            maxRadius=50
+        )
+
+        # Çemberleri çiz ve koordinatlarını yazdır
+        if circles is not None:
+            circles = np.round(circles[0, :]).astype("int")
+            for (x, y, r) in circles:
+                # Çemberi çiz
+                cv2.circle(frame_rgb, (x, y), r, (0, 255, 0), 2)
+                # Çemberin merkezini işaretle
+                cv2.circle(frame_rgb, (x, y), 2, (0, 0, 255), 1)
+
+                # Koordinatları görüntü üzerine yaz
+                text = f"({x}, {y})"
+                cv2.putText(frame_rgb, text, (x - 40, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+
+                # Koordinatları konsola yaz
+                # print(f"Top Tespit Edildi: Koordinatlar ({x}, {y}), Yaricap: {r}")
+
+        # Görüntüyü OpenCV penceresinde göster
+        cv2.imshow("Tenis Topu Tespiti", frame_rgb)
+
+        # Çıkış için 'q' tuşuna bas
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+finally:
+    # Kaynakları temizle ve OpenCV pencerelerini kapat
+    picam2.stop()
+    cv2.destroyAllWindows()

@@ -1,0 +1,48 @@
+import cv2
+import numpy as np
+
+# Kamerayı başlat
+cap = cv2.VideoCapture(0)  # Varsayılan kamerayı kullanmak için
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    # Grayscale'e dönüştür
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Gürültüyü azaltmak için Gaussian Blur uygula
+    blurred = cv2.GaussianBlur(gray, (9, 9), 2)
+
+    # Hough Circle Transform ile çemberleri tespit et
+    circles = cv2.HoughCircles(
+        blurred,
+        cv2.HOUGH_GRADIENT,
+        dp=1.2,             # Hough Uzayının çözünürlük oranı
+        minDist=30,         # Tespit edilen çemberlerin merkezleri arasındaki minimum mesafe
+        param1=50,          # Canny kenar algılama için üst eşik
+        param2=30,          # Çember tespiti için eşik değeri
+        minRadius=10,       # Çemberin minimum yarıçapı
+        maxRadius=50        # Çemberin maksimum yarıçapı
+    )
+
+    # Çemberleri çiz
+    if circles is not None:
+        circles = np.round(circles[0, :]).astype("int")
+        for (x, y, r) in circles:
+            # Çemberi orijinal görüntüye çiz
+            cv2.circle(frame, (x, y), r, (0, 255, 0), 4)
+            # Çemberin merkezini işaretle
+            cv2.circle(frame, (x, y), 2, (0, 0, 255), 3)
+
+    # Görüntüyü göster
+    cv2.imshow("Tenis Topu Tespiti", frame)
+
+    # Çıkış için 'q' tuşuna bas
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# Kaynakları serbest bırak ve pencereleri kapat
+cap.release()
+cv2.destroyAllWindows()
